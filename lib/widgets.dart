@@ -125,6 +125,40 @@ class LocalStore {
     }
   }
 
+  static Future<void> forget(String entry) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_codes, (prefs.getStringList(_codes) ?? []).where((e) => e != entry).toList());
+    } catch (_) {
+      // Optional convenience.
+    }
+  }
+
+  static Future<String?> read(String key) async {
+    try {
+      return (await SharedPreferences.getInstance()).getString(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Saves [value] under [key], or removes the key when [value] is null.
+  static Future<void> write(String key, String? value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      value == null ? await prefs.remove(key) : await prefs.setString(key, value);
+    } catch (_) {
+      // Settings fall back to their defaults.
+    }
+  }
+
+  static const shopToken = 'wain_shop_token';
+  static const server = 'wain_server';
+  static const themeMode = 'wain_theme';
+
+  /// The area the customer picked instead of GPS, or "gps".
+  static const area = 'wain_area';
+
   static Future<void> remember(String kind, String code, String title) async {
     try {
       final prefs = await SharedPreferences.getInstance();

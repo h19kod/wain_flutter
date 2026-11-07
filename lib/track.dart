@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'api.dart';
 import 'format.dart';
@@ -64,6 +67,15 @@ class CodeBox extends StatelessWidget {
             textDirection: TextDirection.ltr,
             style: const TextStyle(fontFamily: 'monospace', fontSize: 32, letterSpacing: 5.8, fontWeight: FontWeight.w600),
           ),
+          TextButton.icon(
+            icon: const Icon(Icons.copy, size: 18),
+            label: const Text('انسخ الرمز'),
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              await Clipboard.setData(ClipboardData(text: code));
+              messenger.showSnackBar(const SnackBar(content: Text('انتسخ الرمز.')));
+            },
+          ),
         ],
       ),
     );
@@ -105,11 +117,16 @@ class _TrackReservationScreenState extends State<TrackReservationScreen> {
   bool cancelling = false;
   bool busy = false;
   final phone = TextEditingController();
+  Timer? timer;
 
   @override
   void initState() {
     super.initState();
     load();
+    // The shop may confirm or the hold may run out while the customer watches.
+    timer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (data?.isOpen ?? false) load();
+    });
     LocalStore.lastPhone().then((v) {
       if (mounted && phone.text.isEmpty) phone.text = v;
     });
@@ -117,6 +134,7 @@ class _TrackReservationScreenState extends State<TrackReservationScreen> {
 
   @override
   void dispose() {
+    timer?.cancel();
     phone.dispose();
     super.dispose();
   }

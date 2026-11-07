@@ -14,7 +14,11 @@ void main() {
   test('freshness wording', () {
     final now = DateTime(2026, 11, 7, 12);
     expect(freshness(now.subtract(const Duration(minutes: 20)), now: now), 'المحل أكد التوفر قبل أقل من ساعة');
-    expect(freshness(now.subtract(const Duration(hours: 5)), now: now), 'المحل أكد التوفر قبل ٥ ساعة');
+    expect(freshness(now.subtract(const Duration(minutes: 70)), now: now), 'المحل أكد التوفر قبل ساعة');
+    expect(freshness(now.subtract(const Duration(hours: 2)), now: now), 'المحل أكد التوفر قبل ساعتين');
+    expect(freshness(now.subtract(const Duration(hours: 5)), now: now), 'المحل أكد التوفر قبل ٥ ساعات');
+    expect(freshness(now.subtract(const Duration(hours: 13)), now: now), 'المحل أكد التوفر قبل ١٣ ساعة');
+    expect(freshness(now.subtract(const Duration(days: 2)), now: now), 'المحل أكد التوفر قبل يومين');
     expect(freshness(now.subtract(const Duration(hours: 30)), now: now), 'المحل أكد التوفر أمس');
     expect(freshness(now.subtract(const Duration(days: 4)), now: now), 'المحل أكد التوفر قبل ٤ أيام');
   });

@@ -15,13 +15,23 @@ String arNumber(num value) {
 
 String iqd(int value) => '${arNumber(value)} د.ع';
 
-String freshness(DateTime confirmed, {DateTime? now}) {
-  final hours = (now ?? DateTime.now()).difference(confirmed).inMinutes / 60;
-  if (hours < 1) return 'المحل أكد التوفر قبل أقل من ساعة';
-  if (hours < 24) return 'المحل أكد التوفر قبل ${arNumber(hours.round())} ساعة';
+/// "ساعة، ساعتين، ٣ ساعات، ١١ ساعة": Arabic counts change the noun after 1, 2 and 3–10.
+String counted(int n, String one, String two, String few, String many) => switch (n) {
+      1 => one,
+      2 => two,
+      >= 3 && <= 10 => '${arNumber(n)} $few',
+      _ => '${arNumber(n)} $many',
+    };
+
+String ago(DateTime then, {DateTime? now}) {
+  final hours = (now ?? DateTime.now()).difference(then).inMinutes / 60;
+  if (hours < 1) return 'قبل أقل من ساعة';
+  if (hours < 24) return 'قبل ${counted(hours.round(), 'ساعة', 'ساعتين', 'ساعات', 'ساعة')}';
   final days = (hours / 24).round();
-  return days == 1 ? 'المحل أكد التوفر أمس' : 'المحل أكد التوفر قبل ${arNumber(days)} أيام';
+  return days == 1 ? 'أمس' : 'قبل ${counted(days, 'يوم', 'يومين', 'أيام', 'يوم')}';
 }
+
+String freshness(DateTime confirmed, {DateTime? now}) => 'المحل أكد التوفر ${ago(confirmed, now: now)}';
 
 String clockTime(DateTime time) {
   final local = time.toLocal();

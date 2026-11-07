@@ -8,13 +8,16 @@ import 'api.dart';
 import 'reserve.dart';
 import 'requests.dart';
 import 'results.dart';
+import 'settings.dart';
+import 'shop.dart';
+import 'state.dart';
 import 'theme.dart';
 import 'track.dart';
 import 'widgets.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.api, this.locate = currentOrigin});
-  final WainApi api;
+  const HomeScreen({super.key, required this.state, this.locate = currentOrigin});
+  final AppState state;
 
   /// Where the customer is, for the distance to each shop; null when unknown.
   final Future<Origin?> Function() locate;
@@ -47,25 +50,43 @@ class _HomeScreenState extends State<HomeScreen> {
   String error = '';
   Origin? origin;
   bool located = false;
+
+  /// "gps", or the name of the area the customer picked.
+  String areaChoice = 'gps';
+  Future<SearchResult> Function(Origin? origin)? lastSearch;
   List<String> recent = [];
   final query = TextEditingController();
+  final code = TextEditingController();
   final scroll = ScrollController();
   final resultsKey = GlobalKey();
+
+  WainApi get api => widget.state.api;
 
   @override
   void initState() {
     super.initState();
-    widget.api.meta().then((m) {
-      if (mounted) setState(() => meta = m);
-    }).catchError((_) {});
+    loadMeta();
     loadRecent();
+    LocalStore.read(LocalStore.area).then((v) {
+      if (mounted && v != null) setState(() => areaChoice = v);
+    });
   }
 
   @override
   void dispose() {
     query.dispose();
+    code.dispose();
     scroll.dispose();
     super.dispose();
+  }
+
+  Future<void> loadMeta() async {
+    try {
+      final m = await api.meta();
+      if (mounted) setState(() => meta = m);
+    } on ApiError catch (e) {
+      if (mounted) setState(() => error = e.message);
+    }
   }
 
   Future<void> loadRecent() async {
@@ -74,6 +95,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<Origin?> where() async {
+    if (areaChoice != 'gps') {
+      for (final a in meta?.areas ?? <Area>[]) {
+        if (a.name == areaChoice) return Origin(a.lat, a.lng);
+      }
+    }
     if (!located) {
       origin = await widget.locate();
       located = true;
@@ -81,7 +107,73 @@ class _HomeScreenState extends State<HomeScreen> {
     return origin;
   }
 
+  Future<void> pickArea() async {
+    final areas = meta?.areas ?? [];
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => ListView(
+        shrinkWrap: true,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text('منين تدوّر؟', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          ),
+          RadioGroup<String>(
+            groupValue: areaChoice,
+            onChanged: (v) => Navigator.of(context).pop(v),
+            child: Column(children: [
+              const RadioListTile(value: 'gps', title: Text('موقعي الحالي (GPS)')),
+              for (final a in areas) RadioListTile(value: a.name, title: Text(a.name)),
+            ]),
+          ),
+        ],
+      ),
+    );
+    if (picked == null || picked == areaChoice) return;
+    setState(() => areaChoice = picked);
+    await LocalStore.write(LocalStore.area, picked);
+    final again = lastSearch;
+    if (again != null && result != null) await run(again);
+  }
+
+  void fail(String message) {
+    if (!mounted) return;
+    setState(() {
+      error = message;
+      busy = false;
+    });
+  }
+
+  Future<void> openCode() async {
+    final typed = code.text.trim().toUpperCase();
+    if (typed.length < 4) return;
+    setState(() {
+      busy = true;
+      error = '';
+    });
+    try {
+      await api.reservation(typed);
+      if (mounted) setState(() => busy = false);
+      await openReservation(typed);
+      return;
+    } on ApiError catch (e) {
+      if (e.status != 404) {
+        fail(e.message);
+        return;
+      }
+    }
+    try {
+      await api.partRequest(typed);
+      if (mounted) setState(() => busy = false);
+      await openRequest(typed);
+    } on ApiError catch (e) {
+      fail(e.status == 404 ? 'ما لكينا حجز أو طلب بهذا الرمز.' : e.message);
+    }
+  }
+
   Future<void> run(Future<SearchResult> Function(Origin? origin) search) async {
+    lastSearch = search;
     FocusScope.of(context).unfocus();
     setState(() {
       busy = true;
@@ -103,30 +195,32 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() => busy = false);
   }
 
-  Future<void> searchPhoto(Uint8List bytes) => run((o) => widget.api.searchImage(bytes, origin: o));
+  Future<void> searchPhoto(Uint8List bytes) => run((o) => api.searchImage(bytes, origin: o));
 
   Future<void> capture(ImageSource source) async {
     final XFile? file;
     try {
       file = await ImagePicker().pickImage(source: source, maxWidth: 1280, imageQuality: 85);
     } catch (_) {
-      setState(() => error = 'ما كدرنا نفتح الكاميرا. جرّب تختار صورة من المعرض.');
+      if (mounted) setState(() => error = 'ما كدرنا نفتح الكاميرا. جرّب تختار صورة من المعرض.');
       return;
     }
     if (file == null) return;
-    await searchPhoto(await file.readAsBytes());
+    final bytes = await file.readAsBytes();
+    if (mounted) await searchPhoto(bytes);
   }
 
   Future<void> searchText() async {
     final q = query.text.trim();
     if (q.isEmpty) return;
-    await run((o) => widget.api.searchText(q, origin: o));
+    await run((o) => api.searchText(q, origin: o));
   }
 
   Future<void> trySample(int i) async {
     setState(() => busy = true);
     try {
-      final bytes = await widget.api.download(widget.api.media('/media/samples/sample_$i.jpg')!);
+      final bytes = await api.download(api.media('/media/samples/sample_$i.jpg')!);
+      if (!mounted) return;
       setState(() => busy = false);
       await searchPhoto(bytes);
     } on ApiError catch (e) {
@@ -140,29 +234,29 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> reserve(Listing listing, String partName) async {
-    final code = await showReserveSheet(context, api: widget.api, listing: listing, partName: partName);
+    final code = await showReserveSheet(context, api: api, listing: listing, partName: partName);
     if (code == null || !mounted) return;
     await openReservation(code);
   }
 
   Future<void> openReservation(String code) async {
     await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => TrackReservationScreen(api: widget.api, code: code),
+      builder: (_) => TrackReservationScreen(api: api, code: code),
     ));
     loadRecent();
   }
 
   Future<void> openRequest(String code) async {
     await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => TrackRequestScreen(api: widget.api, code: code),
+      builder: (_) => TrackRequestScreen(api: api, code: code),
     ));
     loadRecent();
   }
 
   Future<void> ask(Part? suggested) async {
-    final meta = this.meta ?? Meta(areas: [], shops: 0, demo: false);
+    final meta = this.meta ?? Meta.empty;
     final code = await Navigator.of(context).push(MaterialPageRoute<String>(
-      builder: (_) => RequestScreen(api: widget.api, meta: meta, suggested: suggested, query: result?.query),
+      builder: (_) => RequestScreen(api: api, meta: meta, suggested: suggested, query: result?.query),
     ));
     if (code != null && mounted) await openRequest(code);
   }
@@ -175,8 +269,17 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Text('وين ألكاه؟', style: TextStyle(fontFamily: displayFont, fontSize: 24, color: c.tag)),
         actions: [
           TextButton(
-            onPressed: () => openUri(context, Uri.parse('${widget.api.baseUrl}/#/shop')),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => ShopPortalScreen(state: widget.state, meta: meta ?? Meta.empty),
+            )),
             child: const Text('عندك محل؟', style: TextStyle(color: Colors.white)),
+          ),
+          IconButton(
+            tooltip: 'الإعدادات',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+              builder: (_) => SettingsScreen(state: widget.state),
+            )),
           ),
         ],
       ),
@@ -193,6 +296,8 @@ class _HomeScreenState extends State<HomeScreen> {
           _Sign(
             busy: busy,
             query: query,
+            area: areaChoice == 'gps' ? 'قريب من موقعي' : 'قريب من $areaChoice',
+            onArea: pickArea,
             onCamera: () => capture(ImageSource.camera),
             onGallery: () => capture(ImageSource.gallery),
             onSearch: searchText,
@@ -202,15 +307,37 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (error.isNotEmpty) Alert(error),
+                if (error.isNotEmpty)
+                  Alert(error),
+                if (error.isNotEmpty && meta == null)
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: OutlinedButton(
+                      onPressed: () {
+                        setState(() => error = '');
+                        loadMeta();
+                      },
+                      child: const Text('حاول مرة ثانية'),
+                    ),
+                  ),
                 if (result != null)
                   KeyedSubtree(
                     key: resultsKey,
-                    child: ResultsView(result: result!, api: widget.api, onReserve: reserve, onAsk: ask),
+                    child: ResultsView(result: result!, api: api, onReserve: reserve, onAsk: ask),
                   )
                 else ...[
-                  if (recent.isNotEmpty) _Recent(entries: recent, onReservation: openReservation, onRequest: openRequest),
-                  if (meta?.demo ?? false) _Samples(api: widget.api, busy: busy, onPick: trySample),
+                  if (recent.isNotEmpty)
+                    _Recent(
+                      entries: recent,
+                      onReservation: openReservation,
+                      onRequest: openRequest,
+                      onForget: (entry) async {
+                        await LocalStore.forget(entry);
+                        loadRecent();
+                      },
+                    ),
+                  _TrackCode(controller: code, busy: busy, onOpen: openCode),
+                  if (meta?.demo ?? false) _Samples(api: api, busy: busy, onPick: trySample),
                   const _How(),
                 ],
               ],
@@ -231,12 +358,16 @@ class _Sign extends StatelessWidget {
   const _Sign({
     required this.busy,
     required this.query,
+    required this.area,
+    required this.onArea,
     required this.onCamera,
     required this.onGallery,
     required this.onSearch,
   });
   final bool busy;
   final TextEditingController query;
+  final String area;
+  final VoidCallback onArea;
   final VoidCallback onCamera;
   final VoidCallback onGallery;
   final VoidCallback onSearch;
@@ -319,6 +450,15 @@ class _Sign extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+          const SizedBox(height: 12),
+          ActionChip(
+            avatar: Icon(Icons.place_outlined, size: 18, color: c.tagInk),
+            label: Text(area),
+            labelStyle: TextStyle(color: c.tagInk, fontWeight: FontWeight.w600),
+            backgroundColor: c.tag,
+            side: BorderSide.none,
+            onPressed: onArea,
           ),
         ],
       ),
@@ -461,10 +601,11 @@ class _Samples extends StatelessWidget {
 }
 
 class _Recent extends StatelessWidget {
-  const _Recent({required this.entries, required this.onReservation, required this.onRequest});
+  const _Recent({required this.entries, required this.onReservation, required this.onRequest, required this.onForget});
   final List<String> entries;
   final ValueChanged<String> onReservation;
   final ValueChanged<String> onRequest;
+  final ValueChanged<String> onForget;
 
   @override
   Widget build(BuildContext context) {
@@ -475,10 +616,20 @@ class _Recent extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text('حجوزاتك وطلباتك', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          const Muted('اسحب وحدة لليسار أو اليمين حتى تشيلها.', small: true),
           const SizedBox(height: 8),
           for (final entry in entries)
             if (_parse(entry) case (final kind, final code, final title))
-              Card(
+              Dismissible(
+                key: ValueKey(entry),
+                onDismissed: (_) => onForget(entry),
+                background: Container(
+                  alignment: AlignmentDirectional.centerStart,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  color: c.stamp,
+                  child: const Text('شيله من القائمة', style: TextStyle(color: Colors.white)),
+                ),
+                child: Card(
                 color: c.card,
                 elevation: 0,
                 margin: const EdgeInsets.only(bottom: 8),
@@ -488,6 +639,7 @@ class _Recent extends StatelessWidget {
                   trailing: const Icon(Icons.chevron_left),
                   onTap: () => kind == 'reservation' ? onReservation(code) : onRequest(code),
                 ),
+              ),
               ),
         ],
       ),
@@ -542,4 +694,40 @@ class _How extends StatelessWidget {
       ],
     );
   }
+}
+
+class _TrackCode extends StatelessWidget {
+  const _TrackCode({required this.controller, required this.busy, required this.onOpen});
+  final TextEditingController controller;
+  final bool busy;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('عندك رمز حجز أو طلب؟', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Row(
+              spacing: 8,
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const Key('track-code'),
+                    controller: controller,
+                    textDirection: TextDirection.ltr,
+                    textCapitalization: TextCapitalization.characters,
+                    textInputAction: TextInputAction.go,
+                    onSubmitted: (_) => onOpen(),
+                    decoration: const InputDecoration(hintText: 'مثلاً W72GW8HB3C', hintTextDirection: TextDirection.rtl),
+                  ),
+                ),
+                FilledButton(onPressed: busy ? null : onOpen, child: const Text('افتح')),
+              ],
+            ),
+          ],
+        ),
+      );
 }

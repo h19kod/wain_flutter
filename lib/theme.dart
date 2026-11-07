@@ -129,6 +129,17 @@ ThemeData buildTheme(Brightness brightness) {
         textStyle: const TextStyle(fontFamily: bodyFont, fontWeight: FontWeight.w600, fontSize: 15),
       ),
     ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: c.accent,
+        textStyle: const TextStyle(fontFamily: bodyFont, fontWeight: FontWeight.w600, fontSize: 15),
+      ),
+    ),
+    chipTheme: ChipThemeData(
+      selectedColor: WainColors.mix(c.enamel, 0.18, c.card),
+      side: BorderSide(color: c.rule),
+      labelStyle: TextStyle(fontFamily: bodyFont, color: c.ink),
+    ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         foregroundColor: c.ink,

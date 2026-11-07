@@ -148,6 +148,7 @@ void main() {
     expect(find.text('ملغية'), findsOneWidget);
     expect(find.text('محجوزة لحد'), findsNothing);
     expect(find.text('ألغِ الحجز'), findsNothing);
+    await tester.pumpWidget(const SizedBox()); // stops the refresh timer
   });
 
   testWidgets('an unknown code says so', (tester) async {
@@ -155,5 +156,6 @@ void main() {
     await tester.pumpWidget(app(TrackReservationScreen(api: api, code: 'NOPE00')));
     await tester.pumpAndSettle();
     expect(find.text('ما لكينا حجز بهذا الرمز.'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
   });
 }

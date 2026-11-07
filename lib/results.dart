@@ -27,8 +27,28 @@ class ResultsView extends StatefulWidget {
   State<ResultsView> createState() => _ResultsViewState();
 }
 
+enum ListingOrder { best, cheapest, nearest }
+
+/// The shop listings in the order and condition the customer asked for.
+List<Listing> arrange(List<Listing> listings, ListingOrder order, String? condition) {
+  final shown = [for (final l in listings) if (condition == null || l.condition == condition) l];
+  switch (order) {
+    case ListingOrder.best:
+      break; // The server already ranks fresh, near and cheap first.
+    case ListingOrder.cheapest:
+      shown.sort((a, b) => a.priceIqd.compareTo(b.priceIqd));
+    case ListingOrder.nearest:
+      shown.sort((a, b) => (a.distanceKm ?? double.infinity).compareTo(b.distanceKm ?? double.infinity));
+  }
+  return shown;
+}
+
 class _ResultsViewState extends State<ResultsView> {
   int picked = 0;
+  ListingOrder order = ListingOrder.best;
+
+  /// "new", "used", or null for both.
+  String? condition;
 
   @override
   void didUpdateWidget(ResultsView old) {
@@ -57,6 +77,10 @@ class _ResultsViewState extends State<ResultsView> {
             ? 'مو متأكدين. أي وحدة تشبه قطعتك؟'
             : 'نعتقد قطعتك هي:';
     final count = chosen.listings.length;
+    final shown = arrange(chosen.listings, order, condition);
+    final hasDistance = chosen.listings.any((l) => l.distanceKm != null);
+    final hasUsed = chosen.listings.any((l) => l.condition == 'used');
+    final hasNew = chosen.listings.any((l) => l.condition == 'new');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -104,7 +128,10 @@ class _ResultsViewState extends State<ResultsView> {
                 part: result.candidates[i].part,
                 imageUrl: widget.api.media(result.candidates[i].part.image),
                 selected: i == picked,
-                onTap: () => setState(() => picked = i),
+                onTap: () => setState(() {
+                  picked = i;
+                  condition = null;
+                }),
               ),
             ),
           ),
@@ -130,7 +157,37 @@ class _ResultsViewState extends State<ResultsView> {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
             ),
           ),
-          PriceTags(listings: chosen.listings, onReserve: (l) => widget.onReserve(l, part.nameAr)),
+          if (count > 1)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final (value, label) in [
+                    (ListingOrder.best, 'الأنسب'),
+                    (ListingOrder.cheapest, 'الأرخص'),
+                    if (hasDistance) (ListingOrder.nearest, 'الأقرب'),
+                  ])
+                    ChoiceChip(
+                      label: Text(label),
+                      selected: order == value,
+                      onSelected: (_) => setState(() => order = value),
+                    ),
+                  if (hasUsed && hasNew) ...[
+                    const SizedBox(width: 8),
+                    for (final (value, label) in [(null, 'الكل'), ('new', 'جديد'), ('used', 'مستعمل')])
+                      FilterChip(
+                        label: Text(label),
+                        selected: condition == value,
+                        showCheckmark: false,
+                        onSelected: (_) => setState(() => condition = value),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          PriceTags(listings: shown, onReserve: (l) => widget.onReserve(l, part.nameAr)),
         ] else
           const _Empty(
             title: 'ماكو محل عنده هاي القطعة هسه',

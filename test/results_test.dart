@@ -42,9 +42,9 @@ void main() {
     expect(find.text('٢ محلات عندهم هاي القطعة'), findsOneWidget);
     expect(find.text('١٢٬٠٠٠ د.ع'), findsOneWidget);
     expect(find.text('٩٬٥٠٠ د.ع'), findsOneWidget);
-    expect(find.text('مستعمل'), findsOneWidget);
+    expect(find.text('مستعمل'), findsNWidgets(2)); // the tag and the filter chip
     expect(find.text('الكرادة · يبعد ٢٫٥ كم'), findsOneWidget);
-    expect(find.text('المحل أكد التوفر قبل ٣ ساعة'), findsOneWidget);
+    expect(find.text('المحل أكد التوفر قبل ٣ ساعات'), findsOneWidget);
     expect(find.text('ما تأكد التوفر من أسبوع أو أكثر. اتصل قبل لا تروح.'), findsOneWidget);
     expect(find.textContaining('عدد الأرجل وشكل الفتحة', findRichText: true), findsOneWidget);
     expect(find.text('الصور رسوم توضيحية، مو صور القطعة الحقيقية.'), findsOneWidget);
@@ -105,5 +105,27 @@ void main() {
     );
     await tester.tap(find.text('ما لكيت قطعتي؟ اطلبها من المحلات'));
     expect(suggested?.id, 1);
+  });
+
+  testWidgets('listings sort by price and filter by condition', (tester) async {
+    await show(tester, SearchResult(mode: SearchMode.image, confidence: 'high', candidates: [pump]));
+    double top(String text) => tester.getTopLeft(find.text(text)).dy;
+
+    expect(top('١٢٬٠٠٠ د.ع'), lessThan(top('٩٬٥٠٠ د.ع')));
+    await tester.tap(find.text('الأرخص'));
+    await tester.pump();
+    expect(top('٩٬٥٠٠ د.ع'), lessThan(top('١٢٬٠٠٠ د.ع')));
+
+    await tester.tap(find.widgetWithText(FilterChip, 'جديد'));
+    await tester.pump();
+    expect(find.text('٩٬٥٠٠ د.ع'), findsNothing);
+    expect(find.text('١٢٬٠٠٠ د.ع'), findsOneWidget);
+  });
+
+  test('nearest puts shops without a distance last', () {
+    final far = Listing.fromJson(listingJson(id: 1, distance: 9));
+    final near = Listing.fromJson(listingJson(id: 2, distance: 1.5));
+    final unknown = Listing.fromJson(listingJson(id: 3, distance: null));
+    expect(arrange([unknown, far, near], ListingOrder.nearest, null).map((l) => l.id), [2, 1, 3]);
   });
 }
