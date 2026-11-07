@@ -1,0 +1,35 @@
+name: wain
+description: "وين ألكاه؟ Find appliance spare parts in Baghdad shops from a photo."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  geolocator: ^14.0.2
+  http: ^1.6.0
+  image_picker: ^1.2.2
+  shared_preferences: ^2.5.5
+  url_launcher: ^6.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: Lalezar
+      fonts:
+        - asset: assets/fonts/Lalezar-Regular.ttf
+    - family: IBMPlexSansArabic
+      fonts:
+        - asset: assets/fonts/IBMPlexSansArabic-Regular.ttf
+        - asset: assets/fonts/IBMPlexSansArabic-SemiBold.ttf
+          weight: 600
